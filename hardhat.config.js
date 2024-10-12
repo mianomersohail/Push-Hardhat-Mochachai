@@ -1,9 +1,9 @@
-/** @type import('hardhat/config').HardhatUserConfig */
+// If you're using CommonJS, keep `require` and use `module.exports`:
 
-import '@nomiclabs/hardhat-waffle';
+require('@nomiclabs/hardhat-waffle');
 
 const config = {
   solidity: "0.8.27",
 };
 
-export default config;
+module.exports = config;

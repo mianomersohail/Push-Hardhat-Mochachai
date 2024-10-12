@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "D:\\Decen\\hardhat\\contracts\\Deal.sol": {
-      "lastModificationDate": 1728541985697,
-      "contentHash": "0c7e31f41417e37b2e6e9a1885132dd1",
+      "lastModificationDate": 1728580963253,
+      "contentHash": "88bfc150b34384098377f0f530ee640e",
       "sourceName": "contracts/Deal.sol",
       "solcConfig": {
         "version": "0.8.27",

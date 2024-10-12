@@ -1,5 +1,5 @@
 // Import ethers from Hardhat
-import { ethers } from 'hardhat';
+const { ethers } = require('ethers');
 
 describe("Check Dealing Smart Contract", function () {
     let addr1;
@@ -13,7 +13,7 @@ describe("Check Dealing Smart Contract", function () {
         const chai = await import('chai');
         expect = chai.expect;
 
-        // Get signers
+        // Get signers from Hardhat environment
         [addr1, addr2] = await ethers.getSigners();
 
         // Get contract factory
