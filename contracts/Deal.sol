@@ -1,149 +1,129 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.27;
 
-contract Dealing {
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import '../contracts/DealToken.sol';
+contract Dealing is DealToken {
     mapping(address => uint256) public Balance;
+    mapping(address => uint256) public LockAmount;
     mapping(uint256 => Deal) public Deals;
-    mapping(address => uint256) public LockAmounts;
-    uint public CurrentId;
-    // Events for debugging
-    event LogBalanceUpdate(
-        address user,
-        uint256 beforeAmount,
-        uint256 afterAmount
-    );
-    event LogDealStatusUpdate(uint dealId, Status newStatus);
+    uint256 public CurrentId;
 
-    // All modifiers
-    modifier OnlySeller(uint _id) {
-        require(
-            msg.sender == Deals[_id].seller,
-            "Only seller of this can Agree"
-        );
+    enum Status { Initial, DealAdd, BuyerAgree, SellerSend, BuyerReceive, BuyerSatisfy, SellerSatisfy, DealDone }
+
+    // Modifier to check if the caller is the buyer
+    modifier OnlyBuyer(uint256 id) {
+        require(msg.sender == Deals[id].buyer, "Only the buyer can modify this deal");
         _;
     }
 
-    modifier OnlyBuyer(uint _id) {
-        require(msg.sender == Deals[_id].buyer, "Only Buyer of this can Agree");
+    // Modifier to check if the caller is the seller
+    modifier OnlySeller(uint256 id) {
+        require(msg.sender == Deals[id].seller, "Only the seller can send the parcel");
         _;
-    }
-
-    enum Status {
-        Initial,
-        DealAdd,
-        SellerAgree,
-        BuyerSend,
-        SellerSatisfy,
-        DealDone
     }
 
     struct Deal {
-        uint id;
-        uint dealamount;
-        uint latedays;
-        uint latefeesperday;
+        uint256 id;
+        uint256 dealAmount;
+        uint256 lateFees;
+        uint256 lateDays;
         address buyer;
         address seller;
-        Status dealstatus;
+        uint256 dealAddDate;
+        uint256 dealDeadline;
+        uint256 sendDate;
+        uint256 receiveDate;
+        uint256 fine;
+        Status dealStatus;
     }
 
-    function Withdraw(uint amount) public payable {
-        require(Balance[msg.sender] >= amount, "Insufficient Balance");
-        Balance[msg.sender] -= amount;
-        payable(msg.sender).transfer(amount);
-    }
     receive() external payable {
-        assert(msg.value > 0);
+        require(msg.value > 0, "Value should not be zero");
         Balance[msg.sender] += msg.value;
     }
-    function BuyerDealAdd(
-          uint256 _dealamount,
-              uint _latefees,
-        address _seller
-    ) public {
-        require(
-            msg.sender != _seller,
-            "Buyer and Seller Address Cannot Be Same"
-        );
-        Deals[CurrentId] = Deal(
-            CurrentId,
-            _dealamount,
-            0,
-            _latefees,
-            msg.sender,
-            _seller,
-            Status.DealAdd
-        );
+
+    function withdraw(uint256 amount, address to) external payable {
+        require(Balance[msg.sender] >= amount, "Insufficient balance");
+        uint256 balanceCheckLock = LockAmount[msg.sender];
+        uint256 availableToWithdraw = Balance[msg.sender] - balanceCheckLock;
+
+        require(availableToWithdraw >= amount, "Amount is locked in deals; you cannot withdraw this amount while a deal is running");
+
+        // Transfer the amount to the specified address
+        Balance[msg.sender] -= amount;
+        payable(to).transfer(amount);
+    }
+
+    function sellerDealAdd(address _buyer, uint256 _dealAmount, uint256 _lateFees, uint256 _dealDeadline) external {
+        require(msg.sender != _buyer, "Buyer and seller addresses cannot be the same");
+        require(block.timestamp < _dealDeadline, "Deal deadline cannot be in the past");
+
+        Deals[CurrentId] = Deal({
+            id: CurrentId,
+            dealAmount: _dealAmount,
+            lateFees: _lateFees,
+            lateDays: 0,
+            buyer: _buyer,
+            seller: msg.sender,
+            dealAddDate: block.timestamp,
+            dealDeadline: _dealDeadline,
+            sendDate: 0,
+            receiveDate: 0,
+            fine: 0,
+            dealStatus: Status.DealAdd
+        });
+
         CurrentId++;
     }
 
-    function sellerAgreewidthdeal(uint _id) public OnlySeller(_id) {
-        require(
-            Deals[_id].dealstatus == Status.DealAdd,
-            "Deal is not Add or Already closed"
-        );
-        require(
-            Balance[Deals[_id].buyer] >= Deals[_id].dealamount &&
-                Balance[Deals[_id].seller] >= Deals[_id].dealamount * 2,
-            "Buyer balance should be >= dealamount and seller balance should be >= double of the dealamount"
-        );
+    function buyerAgree(uint256 _id) external OnlyBuyer(_id) {
+        require(Deals[_id].dealStatus == Status.DealAdd, "Deal is not in the correct state or already closed");
+        require(Balance[Deals[_id].buyer] >= Deals[_id].dealAmount * 2, "Buyer balance should be at least double the deal amount");
+        require(Balance[Deals[_id].seller] >= Deals[_id].dealAmount, "Seller balance should be at least equal to the deal amount");
 
-        Deals[_id].dealstatus = Status.SellerAgree;
+        uint256 balanceLockBuyer = Deals[_id].dealAmount * 2;
+        uint256 balanceLockSeller = Deals[_id].dealAmount;
 
-        uint buyerBalanceBefore = Balance[Deals[_id].buyer];
-        uint sellerBalanceBefore = Balance[Deals[_id].seller];
+        LockAmount[Deals[_id].buyer] += balanceLockBuyer;
+        LockAmount[Deals[_id].seller] += balanceLockSeller;
 
-        // Update balances and lock amounts
-        Balance[Deals[_id].buyer] -= Deals[_id].dealamount;
-        Balance[Deals[_id].seller] -= Deals[_id].dealamount * 2;
-
-        LockAmounts[Deals[_id].buyer] += Deals[_id].dealamount;
-        LockAmounts[Deals[_id].seller] += Deals[_id].dealamount * 2;
-
-        uint buyerBalanceAfter = Balance[Deals[_id].buyer];
-        uint sellerBalanceAfter = Balance[Deals[_id].seller];
-
-        // Emit events to debug balances
-        emit LogBalanceUpdate(
-            Deals[_id].buyer,
-            buyerBalanceBefore,
-            buyerBalanceAfter
-        );
-        emit LogBalanceUpdate(
-            Deals[_id].seller,
-            sellerBalanceBefore,
-            sellerBalanceAfter
-        );
-
-        // Emit event for deal status update
-        emit LogDealStatusUpdate(_id, Status.SellerAgree);
+        Deals[_id].dealStatus = Status.BuyerAgree;
     }
 
-    function SellerSend(uint _id) public OnlyBuyer(_id) {
-        require(
-            Deals[_id].dealstatus == Status.SellerAgree,
-            "Seller is not Agree or already closed Deal"
-        );
-        Deals[_id].dealstatus = Status.BuyerSend;
+    function sellerSend(uint256 _id) external OnlySeller(_id) {
+        require(Deals[_id].dealStatus == Status.BuyerAgree, "Buyer must agree before the seller can send the parcel");
 
-        // Emit event for deal status update
-        emit LogDealStatusUpdate(_id, Status.BuyerSend);
+        Deals[_id].sendDate = block.timestamp;
+        Deals[_id].dealStatus = Status.SellerSend;
     }
 
-    function SellerReceive(uint _id) public OnlySeller(_id) {
-        require(
-            Deals[_id].dealstatus == Status.BuyerSend,
-            "Buyer Not Send or Deal Already closed"
-        );
-        Deals[_id].dealstatus = Status.DealDone;
+    function buyerReceive(uint256 _id) external OnlyBuyer(_id) {
+        require(Deals[_id].dealStatus == Status.SellerSend, "Parcel must be sent by the seller before the buyer can receive it");
 
-        uint buyerBalanceToUnlock = LockAmounts[Deals[_id].buyer];
-        uint sellerBalanceToUnlock = LockAmounts[Deals[_id].seller];
-        LockAmounts[Deals[_id].buyer] = 0;
-        LockAmounts[Deals[_id].seller] = 0;
-        Balance[Deals[_id].buyer] += buyerBalanceToUnlock;
-        Balance[Deals[_id].seller] += sellerBalanceToUnlock;
-        // Emit event for deal status update
-        emit LogDealStatusUpdate(_id, Status.DealDone);
+        Deals[_id].receiveDate = block.timestamp;
+
+        // Calculate late days if the parcel was received after the deal deadline
+        if (Deals[_id].receiveDate > Deals[_id].dealDeadline) {
+            uint256 lateDays = (Deals[_id].receiveDate - Deals[_id].dealDeadline) / 1 days;
+            uint256 fine = lateDays * Deals[_id].lateFees;
+            Deals[_id].lateDays = lateDays;
+            Deals[_id].fine = fine;
+        }
+
+        Deals[_id].dealStatus = Status.BuyerReceive;
+    }
+
+    function buyerSatisfy(uint256 _id) external OnlyBuyer(_id) {
+        require(Deals[_id].dealStatus == Status.BuyerReceive, "Buyer must receive the parcel before expressing satisfaction");
+
+        Deals[_id].dealStatus = Status.BuyerSatisfy;
+    }
+
+    function sellerSatisfy(uint256 _id) external OnlySeller(_id) {
+        require(Deals[_id].dealStatus == Status.BuyerSatisfy, "Buyer must express satisfaction before the seller can complete the deal");
+
+        Deals[_id].dealStatus = Status.SellerSatisfy;
     }
 }
