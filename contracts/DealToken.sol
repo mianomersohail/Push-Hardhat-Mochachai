@@ -9,7 +9,7 @@ contract DealToken is ERC20{
     
     constructor() ERC20("DEALING","DEAL"){
         _mint(msg.sender,  1000000000 * 10 ** 18);
-        _burn(0x0000000000000000000000000000000000000000, BURN_AMOUNT);
+        _burn(msg.sender, BURN_AMOUNT);
     }
 
 }
