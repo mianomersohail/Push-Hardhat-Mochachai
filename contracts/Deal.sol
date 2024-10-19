@@ -119,7 +119,6 @@ contract Dealing is DealToken {
 
         Deals[_id].dealStatus = Status.BuyerSatisfy;
     }
-
     function sellerSatisfy(uint256 _id) external OnlySeller(_id) {
         require(Deals[_id].dealStatus == Status.BuyerSatisfy, "Buyer must express satisfaction before the seller can complete the deal");
 
